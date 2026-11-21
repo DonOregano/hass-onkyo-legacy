@@ -24,8 +24,6 @@ Differences from the built-in integration:
   commands that arrive too close together.
 - Audio/video information is not queried: legacy receivers answer these
   with an empty parameter.
-- Volume up/down uses full steps (`UP1`/`DOWN1`); legacy receivers treat
-  `UP`/`DOWN` as half steps, so a single press did not visibly change the volume.
 - The receiver is identified by its MAC address when Home Assistant can see it
   in its ARP table (same subnet), otherwise by the host.
 - The HDMI output action is `onkyo_legacy.select_hdmi_output`.
@@ -55,6 +53,12 @@ your Home Assistant configuration and restart Home Assistant.
 
 Then add the integration under **Settings → Devices & services → Add integration →
 Onkyo (legacy)**.
+
+## Known limitations
+
+- Volume up/down steps by 0.5 dB, like the remote. The receiver reports volume
+  in whole steps only, so Home Assistant's volume level changes on every
+  second press.
 
 ## Tested receivers
 
