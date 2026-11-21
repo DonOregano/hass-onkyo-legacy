@@ -1,10 +1,12 @@
-"""The onkyo component."""
+"""The Onkyo (legacy) component."""
 
 from dataclasses import dataclass
 import logging
 
+from aioonkyo import ReceiverInfo
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, Platform
+from homeassistant.const import CONF_HOST, CONF_MODEL, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
@@ -18,7 +20,7 @@ from .const import (
     ListeningMode,
 )
 from .coordinator import ChannelMutingCoordinator
-from .receiver import ReceiverManager, async_interview
+from .receiver import ReceiverManager, async_probe
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,21 +52,32 @@ async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> None:
     """Set up the Onkyo config entry."""
     host = entry.data[CONF_HOST]
+    port = entry.data[CONF_PORT]
 
     try:
-        info = await async_interview(host)
+        await async_probe(host, port)
     except TimeoutError as exc:
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
-            translation_key="interview_timeout",
+            translation_key="probe_timeout",
             translation_placeholders={"host": host},
         ) from exc
     except OSError as exc:
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
-            translation_key="interview_error",
+            translation_key="cannot_connect",
             translation_placeholders={"host": host},
         ) from exc
+
+    # Legacy receivers cannot be interviewed, so the info comes from the entry
+    assert entry.unique_id is not None
+    info = ReceiverInfo(
+        host=host,
+        ip=host,
+        port=port,
+        model_name=entry.data[CONF_MODEL],
+        identifier=entry.unique_id,
+    )
 
     manager = ReceiverManager(hass, entry, info)
 

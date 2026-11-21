@@ -1,13 +1,12 @@
-"""Onkyo services."""
+"""Onkyo (legacy) services."""
 
 import probatio
 
-from homeassistant.components.media_player import DOMAIN as MEDIA_PLAYER_DOMAIN
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 
-from .const import LEGACY_REV_HDMI_OUTPUT_MAPPING
+from .const import DOMAIN, LEGACY_REV_HDMI_OUTPUT_MAPPING
 from .media_player import DATA_MP_ENTITIES, OnkyoMediaPlayer
 
 ATTR_HDMI_OUTPUT = "hdmi_output"
@@ -19,7 +18,7 @@ ONKYO_SELECT_OUTPUT_SCHEMA = probatio.Schema(
         ),
     }
 )
-SERVICE_SELECT_HDMI_OUTPUT = "onkyo_select_hdmi_output"
+SERVICE_SELECT_HDMI_OUTPUT = "select_hdmi_output"
 
 
 @callback
@@ -45,7 +44,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 await target.async_select_output(service.data[ATTR_HDMI_OUTPUT])
 
     hass.services.async_register(
-        MEDIA_PLAYER_DOMAIN,
+        DOMAIN,
         SERVICE_SELECT_HDMI_OUTPUT,
         async_service_handle,
         schema=ONKYO_SELECT_OUTPUT_SCHEMA,

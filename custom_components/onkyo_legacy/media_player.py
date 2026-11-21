@@ -267,8 +267,8 @@ class OnkyoMediaPlayer(MediaPlayerEntity):
             await self._manager.write(query.ListeningMode(self._zone))
         if self._zone is Zone.MAIN:
             await self._manager.write(query.HDMIOutput())
-            await self._manager.write(query.AudioInformation())
-            await self._manager.write(query.VideoInformation())
+            # Audio/video information is not queried: legacy receivers answer
+            # these with an empty parameter, which cannot be parsed
 
     def cancel_pending(self) -> None:
         """Cancel the pending work."""

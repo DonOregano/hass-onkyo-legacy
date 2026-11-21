@@ -1,4 +1,4 @@
-"""Config flow for Onkyo."""
+"""Config flow for Onkyo (legacy)."""
 
 from collections.abc import Mapping
 import logging
@@ -6,7 +6,6 @@ from typing import Any, override
 
 from aioonkyo import ReceiverInfo
 import probatio
-from yarl import URL
 
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
@@ -14,7 +13,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlowWithReload,
 )
-from homeassistant.const import CONF_DEVICE, CONF_HOST
+from homeassistant.const import CONF_HOST, CONF_MODEL, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
@@ -27,10 +26,11 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
     TextSelector,
 )
-from homeassistant.helpers.service_info.ssdp import SsdpServiceInfo
 
 from . import OnkyoConfigEntry
 from .const import (
+    DEFAULT_MODEL,
+    DEFAULT_PORT,
     DOMAIN,
     OPTION_INPUT_SOURCES,
     OPTION_LISTENING_MODES,
@@ -42,7 +42,7 @@ from .const import (
     InputSource,
     ListeningMode,
 )
-from .receiver import async_discover, async_interview
+from .receiver import async_get_identifier, async_probe
 from .util import get_meaning
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,7 +55,15 @@ INPUT_SOURCES_ALL_MEANINGS = {
 LISTENING_MODES_ALL_MEANINGS = {
     get_meaning(listening_mode): listening_mode for listening_mode in ListeningMode
 }
-STEP_MANUAL_SCHEMA = probatio.Schema({probatio.Required(CONF_HOST): str})
+STEP_USER_SCHEMA = probatio.Schema(
+    {
+        probatio.Required(CONF_HOST): str,
+        probatio.Required(CONF_MODEL, default=DEFAULT_MODEL): str,
+        probatio.Required(CONF_PORT, default=DEFAULT_PORT): probatio.All(
+            probatio.Coerce(int), probatio.Range(min=1, max=65535)
+        ),
+    }
+)
 STEP_RECONFIGURE_SCHEMA = probatio.Schema(
     {
         probatio.Required(OPTION_VOLUME_RESOLUTION): probatio.In(
@@ -87,19 +95,9 @@ class OnkyoConfigFlow(ConfigFlow, domain=DOMAIN):
     """Onkyo config flow."""
 
     _receiver_info: ReceiverInfo
-    _discovered_infos: dict[str, ReceiverInfo]
 
     @override
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Handle a flow initialized by the user."""
-        _LOGGER.debug("Config flow start user")
-        return self.async_show_menu(
-            step_id="user", menu_options=["manual", "eiscp_discovery"]
-        )
-
-    async def async_step_manual(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle manual device entry."""
@@ -107,128 +105,53 @@ class OnkyoConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             host = user_input[CONF_HOST]
-            _LOGGER.debug("Config flow manual: %s", host)
+            port = user_input[CONF_PORT]
+            _LOGGER.debug("Config flow user: %s:%s", host, port)
             try:
-                info = await async_interview(host)
+                await async_probe(host, port)
             except TimeoutError:
-                _LOGGER.warning("Timed out interviewing: %s", host)
+                _LOGGER.warning("Timed out probing: %s:%s", host, port)
                 errors["base"] = "cannot_connect"
             except OSError:
-                _LOGGER.exception("Unexpected exception interviewing: %s", host)
-                errors["base"] = "unknown"
+                _LOGGER.warning("Could not connect to: %s:%s", host, port)
+                errors["base"] = "cannot_connect"
             else:
-                self._receiver_info = info
-
-                await self.async_set_unique_id(info.identifier, raise_on_progress=False)
                 if self.source == SOURCE_RECONFIGURE:
-                    self._abort_if_unique_id_mismatch()
+                    identifier = self._get_reconfigure_entry().unique_id
+                    assert identifier is not None
                 else:
-                    self._abort_if_unique_id_configured()
+                    identifier = await async_get_identifier(self.hass, host)
+                    await self.async_set_unique_id(identifier, raise_on_progress=False)
+                    self._abort_if_unique_id_configured(
+                        updates={CONF_HOST: host, CONF_PORT: port}
+                    )
+
+                self._receiver_info = ReceiverInfo(
+                    host=host,
+                    ip=host,
+                    port=port,
+                    model_name=user_input[CONF_MODEL],
+                    identifier=identifier,
+                )
 
                 return await self.async_step_configure_receiver()
 
         suggested_values = user_input
         if suggested_values is None and self.source == SOURCE_RECONFIGURE:
+            entry_data = self._get_reconfigure_entry().data
             suggested_values = {
-                CONF_HOST: self._get_reconfigure_entry().data[CONF_HOST]
+                CONF_HOST: entry_data[CONF_HOST],
+                CONF_MODEL: entry_data[CONF_MODEL],
+                CONF_PORT: entry_data[CONF_PORT],
             }
 
         return self.async_show_form(
-            step_id="manual",
+            step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                STEP_MANUAL_SCHEMA, suggested_values
+                STEP_USER_SCHEMA, suggested_values
             ),
             errors=errors,
         )
-
-    async def async_step_eiscp_discovery(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Start eiscp discovery and handle user device selection."""
-        if user_input is not None:
-            self._receiver_info = self._discovered_infos[user_input[CONF_DEVICE]]
-            await self.async_set_unique_id(
-                self._receiver_info.identifier, raise_on_progress=False
-            )
-            self._abort_if_unique_id_configured(
-                updates={CONF_HOST: self._receiver_info.host}
-            )
-            return await self.async_step_configure_receiver()
-
-        _LOGGER.debug("Config flow start eiscp discovery")
-
-        try:
-            infos = list(await async_discover(self.hass))
-        except OSError:
-            _LOGGER.exception("Unexpected exception")
-            return self.async_abort(reason="unknown")
-
-        _LOGGER.debug("Discovered devices: %s", infos)
-
-        self._discovered_infos = {}
-        discovered_names = {}
-        current_unique_ids = self._async_current_ids(include_ignore=False)
-        for info in infos:
-            if info.identifier in current_unique_ids:
-                continue
-            self._discovered_infos[info.identifier] = info
-            device_name = f"{info.model_name} ({info.host})"
-            discovered_names[info.identifier] = device_name
-
-        _LOGGER.debug("Discovered new devices: %s", self._discovered_infos)
-
-        if not discovered_names:
-            return self.async_abort(reason="no_devices_found")
-
-        return self.async_show_form(
-            step_id="eiscp_discovery",
-            data_schema=probatio.Schema(
-                {probatio.Required(CONF_DEVICE): probatio.In(discovered_names)}
-            ),
-        )
-
-    @override
-    async def async_step_ssdp(
-        self, discovery_info: SsdpServiceInfo
-    ) -> ConfigFlowResult:
-        """Handle flow initialized by SSDP discovery."""
-        _LOGGER.debug("Config flow start ssdp: %s", discovery_info)
-
-        if udn := discovery_info.ssdp_udn:
-            udn_parts = udn.split(":")
-            if len(udn_parts) == 2:
-                uuid = udn_parts[1]
-                last_uuid_section = uuid.split("-")[-1].upper()
-                await self.async_set_unique_id(last_uuid_section)
-                self._abort_if_unique_id_configured()
-
-        if discovery_info.ssdp_location is None:
-            _LOGGER.error("SSDP location is None")
-            return self.async_abort(reason="unknown")
-
-        host = URL(discovery_info.ssdp_location).host
-
-        if host is None:
-            _LOGGER.error("SSDP host is None")
-            return self.async_abort(reason="unknown")
-
-        try:
-            info = await async_interview(host)
-        except TimeoutError:
-            _LOGGER.info("Timed out interviewing: %s", host)
-            return self.async_abort(reason="cannot_connect")
-        except OSError:
-            _LOGGER.exception("Unexpected exception interviewing: %s", host)
-            return self.async_abort(reason="unknown")
-
-        await self.async_set_unique_id(info.identifier)
-        self._abort_if_unique_id_configured(updates={CONF_HOST: info.host})
-
-        self._receiver_info = info
-
-        title_string = f"{info.model_name} ({info.host})"
-        self.context["title_placeholders"] = {"name": title_string}
-        return await self.async_step_configure_receiver()
 
     async def async_step_configure_receiver(
         self, user_input: dict[str, Any] | None = None
@@ -251,6 +174,8 @@ class OnkyoConfigFlow(ConfigFlow, domain=DOMAIN):
                     reconfigure_entry,
                     data={
                         CONF_HOST: self._receiver_info.host,
+                        CONF_MODEL: self._receiver_info.model_name,
+                        CONF_PORT: self._receiver_info.port,
                     },
                     options={
                         **entry_options,
@@ -286,6 +211,8 @@ class OnkyoConfigFlow(ConfigFlow, domain=DOMAIN):
                     title=self._receiver_info.model_name,
                     data={
                         CONF_HOST: self._receiver_info.host,
+                        CONF_MODEL: self._receiver_info.model_name,
+                        CONF_PORT: self._receiver_info.port,
                     },
                     options={
                         OPTION_VOLUME_RESOLUTION: volume_resolution,
@@ -334,7 +261,7 @@ class OnkyoConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle reconfiguration of the receiver."""
         _LOGGER.debug("Config flow start reconfigure")
-        return await self.async_step_manual()
+        return await self.async_step_user()
 
     @staticmethod
     @callback

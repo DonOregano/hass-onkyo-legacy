@@ -1,14 +1,19 @@
-"""Constants for the Onkyo integration."""
+"""Constants for the Onkyo (legacy) integration."""
 
 import typing
 from typing import Literal
 
 from aioonkyo import HDMIOutputParam, InputSourceParam, ListeningModeParam, Zone
 
-DOMAIN = "onkyo"
+DOMAIN = "onkyo_legacy"
 
-DEVICE_INTERVIEW_TIMEOUT = 5
-DEVICE_DISCOVERY_TIMEOUT = 5
+DEFAULT_PORT = 60128
+DEFAULT_MODEL = "Onkyo"
+
+DEVICE_PROBE_TIMEOUT = 5
+
+# Minimum time between commands, in seconds
+WRITE_INTERVAL = 0.05
 
 type VolumeResolution = Literal[50, 80, 100, 200]
 OPTION_VOLUME_RESOLUTION = "volume_resolution"

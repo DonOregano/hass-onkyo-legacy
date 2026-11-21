@@ -1,52 +1,42 @@
 {
   "config": {
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
-      "unique_id_mismatch": "The serial number of the device does not match the previous serial number",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "already_configured": "Device is already configured",
+      "reconfigure_successful": "Re-configuration was successful",
+      "unknown": "Unexpected error"
     },
     "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "empty_input_source_list": "[%key:component::onkyo::options::error::empty_input_source_list%]",
-      "empty_listening_mode_list": "[%key:component::onkyo::options::error::empty_listening_mode_list%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "cannot_connect": "Failed to connect. Check the host and port, and that network control is enabled on the receiver.",
+      "empty_input_source_list": "Input source list cannot be empty",
+      "empty_listening_mode_list": "Listening mode list cannot be empty",
+      "unknown": "Unexpected error"
     },
     "step": {
       "configure_receiver": {
         "data": {
-          "input_sources": "[%key:component::onkyo::options::step::init::data::input_sources%]",
-          "listening_modes": "[%key:component::onkyo::options::step::init::data::listening_modes%]",
+          "input_sources": "Input sources",
+          "listening_modes": "Listening modes",
           "volume_resolution": "Volume resolution"
         },
         "data_description": {
-          "input_sources": "[%key:component::onkyo::options::step::init::data_description::input_sources%]",
-          "listening_modes": "[%key:component::onkyo::options::step::init::data_description::listening_modes%]",
+          "input_sources": "List of input sources supported by the receiver.",
+          "listening_modes": "List of listening modes supported by the receiver.",
           "volume_resolution": "Number of steps it takes for the receiver to go from the lowest to the highest possible volume."
         },
         "description": "Configure {name}"
       },
-      "eiscp_discovery": {
-        "data": {
-          "device": "[%key:common::config_flow::data::device%]"
-        },
-        "data_description": {
-          "device": "Select the receiver to configure."
-        }
-      },
-      "manual": {
-        "data": {
-          "host": "[%key:common::config_flow::data::host%]"
-        },
-        "data_description": {
-          "host": "Hostname or IP address of the receiver."
-        }
-      },
       "user": {
-        "menu_options": {
-          "eiscp_discovery": "Onkyo discovery",
-          "manual": "Manual entry"
-        }
+        "data": {
+          "host": "Host",
+          "model": "Model",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the receiver.",
+          "model": "Model name of the receiver, e.g. TX-NR3007. Legacy receivers cannot report it themselves, so it is only used for naming.",
+          "port": "eISCP port of the receiver."
+        },
+        "description": "Older Onkyo and Integra receivers (roughly pre-2011) that do not answer network discovery. The receiver is contacted directly over TCP."
       }
     }
   },
@@ -54,17 +44,14 @@
     "cannot_connect": {
       "message": "Could not connect to the receiver at {host}."
     },
-    "interview_error": {
-      "message": "Unexpected error while interviewing the receiver at {host}."
-    },
-    "interview_timeout": {
-      "message": "Timed out while interviewing the receiver at {host}."
-    },
     "invalid_sound_mode": {
       "message": "Cannot select sound mode \"{invalid_sound_mode}\" for entity: {entity_id}."
     },
     "invalid_source": {
       "message": "Cannot select input source \"{invalid_source}\" for entity: {entity_id}."
+    },
+    "probe_timeout": {
+      "message": "Timed out waiting for the receiver at {host} to respond."
     }
   },
   "options": {
@@ -97,6 +84,22 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "select_hdmi_output": {
+      "description": "Selects the HDMI output of the receiver.",
+      "fields": {
+        "entity_id": {
+          "description": "The receiver media player entities to change.",
+          "name": "Entity"
+        },
+        "hdmi_output": {
+          "description": "The HDMI output to select.",
+          "name": "HDMI output"
+        }
+      },
+      "name": "Select HDMI output"
     }
   }
 }

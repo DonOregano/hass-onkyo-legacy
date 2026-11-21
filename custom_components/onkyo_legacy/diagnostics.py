@@ -1,4 +1,4 @@
-"""Diagnostics support for Onkyo."""
+"""Diagnostics support for Onkyo (legacy)."""
 
 from typing import Any
 

@@ -1,0 +1,22 @@
+select_hdmi_output:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: onkyo_legacy
+          domain: media_player
+          multiple: true
+    hdmi_output:
+      required: true
+      selector:
+        select:
+          options:
+            - "analog"
+            - "both"
+            - "hdbaset"
+            - "no"
+            - "out"
+            - "out-sub"
+            - "sub"
+            - "yes"

@@ -1,19 +1,27 @@
 """Onkyo receiver."""
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
-import contextlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import logging
+import socket
 from typing import TYPE_CHECKING
 
-import aioonkyo
-from aioonkyo import Instruction, Receiver, ReceiverInfo, Status, connect, query
+from aioonkyo import (
+    BasicReceiverInfo,
+    Instruction,
+    Receiver,
+    ReceiverInfo,
+    Status,
+    Zone,
+    connect,
+    query,
+    status,
+)
 
-from homeassistant.components import network
 from homeassistant.core import HomeAssistant
 
-from .const import DEVICE_DISCOVERY_TIMEOUT, DEVICE_INTERVIEW_TIMEOUT, ZONES
+from .const import DEVICE_PROBE_TIMEOUT, WRITE_INTERVAL, ZONES
 
 if TYPE_CHECKING:
     from . import OnkyoConfigEntry
@@ -47,6 +55,8 @@ class ReceiverManager:
     callbacks: Callbacks
 
     _started: asyncio.Event
+    _write_lock: asyncio.Lock
+    _last_write: float = 0.0
 
     def __init__(
         self, hass: HomeAssistant, entry: OnkyoConfigEntry, info: ReceiverInfo
@@ -57,6 +67,7 @@ class ReceiverManager:
         self.info = info
         self.callbacks = Callbacks()
         self._started = asyncio.Event()
+        self._write_lock = asyncio.Lock()
 
     async def start(self) -> Awaitable[None] | None:
         """Start the receiver manager run.
@@ -126,34 +137,77 @@ class ReceiverManager:
             await callback(message)
 
     async def write(self, message: Instruction) -> None:
-        """Write message to the receiver."""
+        """Write message to the receiver.
+
+        Legacy receivers silently drop commands that arrive too close together,
+        so the writes are spaced out.
+        """
         assert self.receiver is not None
-        await self.receiver.write(message)
+        async with self._write_lock:
+            loop = asyncio.get_running_loop()
+            if (delay := self._last_write + WRITE_INTERVAL - loop.time()) > 0:
+                await asyncio.sleep(delay)
+            await self.receiver.write(message)
+            self._last_write = loop.time()
 
     def start_unloading(self) -> None:
         """Start unloading."""
         self.callbacks.clear()
 
 
-async def async_interview(host: str) -> ReceiverInfo:
-    """Interview the receiver."""
-    async with asyncio.timeout(DEVICE_INTERVIEW_TIMEOUT):
-        return await aioonkyo.interview(host)
+async def async_probe(host: str, port: int) -> None:
+    """Check that the receiver answers eISCP queries over TCP.
+
+    Legacy receivers do not answer the UDP discovery (interview), so instead we
+    connect directly and wait for the reply to a power query.
+    """
+    async with (
+        asyncio.timeout(DEVICE_PROBE_TIMEOUT),
+        connect(BasicReceiverInfo(host=host, port=port)) as receiver,
+    ):
+        await receiver.write(query.Power(Zone.MAIN))
+        while message := await receiver.read():
+            if isinstance(message, (status.Power, status.NotAvailable)):
+                return
+
+    raise ConnectionError(f"Receiver at {host}:{port} closed the connection")
 
 
-async def async_discover(hass: HomeAssistant) -> Iterable[ReceiverInfo]:
-    """Discover receivers."""
-    all_infos: dict[str, ReceiverInfo] = {}
+async def async_get_identifier(hass: HomeAssistant, host: str) -> str:
+    """Get a stable identifier for the receiver.
 
-    async def collect_infos(address: str) -> None:
-        with contextlib.suppress(asyncio.TimeoutError):
-            async with asyncio.timeout(DEVICE_DISCOVERY_TIMEOUT):
-                async for info in aioonkyo.discover(address):
-                    all_infos.setdefault(info.identifier, info)
+    Legacy receivers do not report their MAC address over eISCP, so we try to
+    find it in the ARP table (populated by the probe connection). If it is not
+    there (e.g. Home Assistant runs in a container without host networking),
+    we fall back to the host.
+    """
+    try:
+        infos = await hass.loop.getaddrinfo(host, None, family=socket.AF_INET)
+    except OSError:
+        return host
+    ip = infos[0][4][0]
 
-    broadcast_addrs = await network.async_get_ipv4_broadcast_addresses(hass)
-    tasks = [collect_infos(str(address)) for address in broadcast_addrs]
+    mac = await hass.async_add_executor_job(_get_mac_from_arp_table, ip)
+    if mac is None:
+        _LOGGER.debug("MAC address of %s not found, using host as identifier", host)
+        return host
 
-    await asyncio.gather(*tasks)
+    return mac.replace(":", "").upper()
 
-    return all_infos.values()
+
+def _get_mac_from_arp_table(ip: str) -> str | None:
+    """Look up the MAC address of an IP address in the ARP table."""
+    try:
+        with open("/proc/net/arp", encoding="ascii") as arp_table:
+            next(arp_table)  # Header
+            for line in arp_table:
+                fields = line.split()
+                if (
+                    len(fields) >= 4
+                    and fields[0] == ip
+                    and fields[3] != "00:00:00:00:00:00"
+                ):
+                    return fields[3]
+    except OSError:
+        pass
+    return None
