@@ -309,13 +309,14 @@ class OnkyoMediaPlayer(MediaPlayerEntity):
     @override
     async def async_volume_up(self) -> None:
         """Increase volume by 1 step."""
-        message = command.Volume(self._zone, command.Volume.Param.UP)
+        # Legacy receivers step UP/DOWN in half steps, UP1/DOWN1 in full steps
+        message = command.Volume(self._zone, command.Volume.Param.UP1)
         await self._manager.write(message)
 
     @override
     async def async_volume_down(self) -> None:
         """Decrease volume by 1 step."""
-        message = command.Volume(self._zone, command.Volume.Param.DOWN)
+        message = command.Volume(self._zone, command.Volume.Param.DOWN1)
         await self._manager.write(message)
 
     @override

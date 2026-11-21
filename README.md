@@ -24,6 +24,8 @@ Differences from the built-in integration:
   commands that arrive too close together.
 - Audio/video information is not queried: legacy receivers answer these
   with an empty parameter.
+- Volume up/down uses full steps (`UP1`/`DOWN1`); legacy receivers treat
+  `UP`/`DOWN` as half steps, so a single press did not visibly change the volume.
 - The receiver is identified by its MAC address when Home Assistant can see it
   in its ARP table (same subnet), otherwise by the host.
 - The HDMI output action is `onkyo_legacy.select_hdmi_output`.
@@ -56,9 +58,9 @@ Onkyo (legacy)**.
 
 ## Tested receivers
 
-| Model     | Notes                                                    |
-|-----------|----------------------------------------------------------|
-| TX-NR3007 | Main zone and zones 2–4 found; no UDP discovery reply.   |
+| Model     | Notes |
+|-----------|-------|
+| TX-NR3007 | Power, volume, mute, input, listening mode, HDMI output and zone 2 power tested. Zones 2–4 found. |
 
 ## License
 
