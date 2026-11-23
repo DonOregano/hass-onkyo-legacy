@@ -33,7 +33,7 @@ the built-in integration.
 
 ## Requirements
 
-- Home Assistant 2026.11 or newer.
+- Home Assistant 2026.10 or newer.
 - Network control enabled on the receiver ("Network Standby" on, so it can be
   turned on over the network).
 - TCP port 60128 reachable from Home Assistant to the receiver. Unlike the

@@ -49,7 +49,7 @@ async def async_setup(hass: HomeAssistant, _: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> bool:
     """Set up the Onkyo config entry."""
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
@@ -105,9 +105,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> Non
                 translation_placeholders={"host": host},
             ) from exc
 
+    return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> None:
+
+async def async_unload_entry(hass: HomeAssistant, entry: OnkyoConfigEntry) -> bool:
     """Unload Onkyo config entry."""
     entry.runtime_data.manager.start_unloading()
 
-    await hass.config_entries.async_unload_platforms_or_raise(entry, PLATFORMS)
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
