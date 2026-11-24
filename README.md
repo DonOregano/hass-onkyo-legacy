@@ -43,7 +43,8 @@ the built-in integration.
 
 ### HACS
 
-Add this repository as a custom repository (type: Integration) in HACS,
+Add `https://github.com/DonOregano/hass-onkyo-legacy` as a custom repository
+(type: Integration) in HACS,
 install "Onkyo (legacy)" and restart Home Assistant.
 
 ### Manual
