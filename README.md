@@ -57,6 +57,10 @@ Onkyo (legacy)**.
 
 ## Known limitations
 
+- Legacy receivers accept only one network connection at a time; a new
+  connection makes the receiver drop the existing one. Other apps that control
+  the receiver over the network (e.g. the Onkyo remote app) will keep
+  disconnecting Home Assistant, which reconnects automatically.
 - Volume up/down steps by 0.5 dB, like the remote. The receiver reports volume
   in whole steps only, so Home Assistant's volume level changes on every
   second press.
